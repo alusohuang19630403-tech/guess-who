@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>圖片隨機抽選 App (抽後刪除版)</title>
+    <style>
+        :root {
+            --primary-color: #6366f1;
+            --bg-color: #f3f4f6;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        h1 { color: #374151; margin-bottom: 10px; }
+
+        .upload-section {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        input[type="file"] { margin-bottom: 10px; }
+
+        .btn-reset {
+            background-color: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 15px;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        /* 卡片本體 */
+        .card {
+            aspect-ratio: 3/4;
+            perspective: 1000px;
+            cursor: pointer;
+            transition: opacity 0.5s, transform 0.5s;
+        }
+
+        /* 消失時的動畫 */
+        .card.removing {
+            opacity: 0;
+            transform: scale(0.5);
+            pointer-events: none;
+        }
+
+        .card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+
+        .card.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .card-back {
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+        }
+
+        .card-front {
+            background-color: white;
+            transform: rotateY(180deg);
+        }
+
+        .card-front img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Modal */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            text-align: center;
+            max-width: 90%;
+        }
+
+        .modal img {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(255,255,255,0.3);
+        }
+
+        .modal-info {
+            color: white;
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .modal-close-tip {
+            color: #aaa;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>猜猜我是誰（二丙專屬版</h1>
+
+    <div class="upload-section">
+        <input type="file" id="imageInput" multiple accept="image/*">
+        <button class="btn-reset" onclick="resetApp()">清空重來</button>
+        <p id="status" style="font-size: 14px; color: #666; margin-top: 10px;">請上傳圖片以開始</p>
+    </div>
+
+    <div class="grid-container" id="gridContainer"></div>
+
+    <div class="modal" id="modal" onclick="closeModal()">
+        <div class="modal-content">
+            <img id="modalImage" src="" alt="放大圖">
+            <div class="modal-info">猜猜我是誰！</div>
+            <div class="modal-close-tip">點擊任意處關閉並移除此牌</div>
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const gridContainer = document.getElementById('gridContainer');
+        const modal = document.getElementById('modal');
+        const modalImage = document.getElementById('modalImage');
+        const statusText = document.getElementById('status');
+
+        let currentActiveCard = null; // 紀錄當前被點開的卡片
+
+        imageInput.addEventListener('change', function(e) {
+            const files = e.target.files;
+            if (!files.length) return;
+
+            const fileArray = Array.from(files).sort(() => Math.random() - 0.5);
+            
+            fileArray.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    createCard(event.target.result);
+                    updateStatus();
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        function createCard(imageSrc) {
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            card.innerHTML = `
+                <div class="card-inner">
+                    <div class="card-back">?</div>
+                    <div class="card-front">
+                        <img src="${imageSrc}">
+                    </div>
+                </div>
+            `;
+
+            card.onclick = function() {
+                if (card.classList.contains('removing')) return;
+
+                currentActiveCard = card; // 標記這張卡片即將被刪除
+                
+                if (!card.classList.contains('flipped')) {
+                    card.classList.add('flipped');
+                    setTimeout(() => {
+                        showModal(imageSrc);
+                    }, 600);
+                } else {
+                    showModal(imageSrc);
+                }
+            };
+
+            gridContainer.appendChild(card);
+        }
+
+        function showModal(src) {
+            modalImage.src = src;
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+            
+            // 如果有選中的卡片，執行刪除動作
+            if (currentActiveCard) {
+                const cardToTarget = currentActiveCard;
+                cardToTarget.classList.add('removing'); // 觸發消失動畫
+                
+                // 等動畫結束後從 DOM 移除
+                setTimeout(() => {
+                    cardToTarget.remove();
+                    currentActiveCard = null;
+                    updateStatus();
+                }, 500);
+            }
+        }
+
+        function updateStatus() {
+            const count = gridContainer.querySelectorAll('.card:not(.removing)').length;
+            statusText.innerText = count > 0 ? `剩餘數量：${count}` : "圖片已抽完！";
+        }
+
+        function resetApp() {
+            gridContainer.innerHTML = '';
+            imageInput.value = '';
+            updateStatus();
+        }
+    </script>
+</body>
+</html>
